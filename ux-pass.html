@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX Pass Checker · BYU AI Foundry</title>
+<style>
+  :root {
+    --u: 8px;                       /* one spacing unit; everything is a multiple */
+    --ink: #1b2430;
+    --ink-2: #4a5565;               /* 7.3:1 on white */
+    --line: #c9d1db;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --brand: #002e5d;               /* BYU navy */
+    --brand-ink: #ffffff;
+    --pass: #1d6b3a;
+    --issue: #a3281f;
+    --na: #4a5565;
+    --focus: #0b63ce;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 1rem/1.5 var(--font);
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  main { max-width: 800px; margin: 0 auto; padding: calc(var(--u)*3) calc(var(--u)*2) calc(var(--u)*8); }
+
+  h1 { font-size: 1.5rem; line-height: 1.25; margin: 0 0 var(--u); }
+  .lede { margin: 0 0 calc(var(--u)*3); color: var(--ink-2); max-width: 62ch; }
+
+  /* Score: sticky so it stays visible while walking the list */
+  .score {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--u);
+    padding: calc(var(--u)*2); margin-bottom: calc(var(--u)*4);
+    display: grid; grid-template-columns: 1fr auto; gap: var(--u) calc(var(--u)*2); align-items: center;
+  }
+  .score-num { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+  .score-num small { font-size: 1rem; font-weight: 400; color: var(--ink-2); }
+  .score-meta { color: var(--ink-2); font-size: .875rem; }
+  .bar { grid-column: 1 / -1; height: calc(var(--u)*1.5); background: #e3e8ee; border-radius: 999px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; width: 0; background: var(--brand); transition: width .2s ease; }
+  @media (prefers-reduced-motion: reduce) { .bar > span { transition: none; } }
+
+  .copy {
+    min-height: 44px; padding: 0 calc(var(--u)*2); border: 0; border-radius: var(--u);
+    background: var(--brand); color: var(--brand-ink); font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .copy:hover { background: #00417f; }
+  .status { grid-column: 1 / -1; min-height: 1.5em; margin: 0; font-size: .875rem; color: var(--ink-2); }
+
+  section.group { margin-bottom: calc(var(--u)*4); }
+  .group h2 { font-size: 1.125rem; margin: 0 0 var(--u); }
+  .group h2 span { color: var(--ink-2); font-weight: 400; }
+  .group-note { margin: 0 0 calc(var(--u)*2); color: var(--ink-2); font-size: .875rem; }
+
+  .check {
+    background: var(--card); border: 1px solid var(--line); border-left-width: calc(var(--u)/2);
+    border-radius: var(--u); padding: calc(var(--u)*2); margin: 0 0 calc(var(--u)*2); min-width: 0;
+  }
+  .check[data-status="pass"]  { border-left-color: var(--pass); }
+  .check[data-status="issue"] { border-left-color: var(--issue); }
+  .check[data-status="na"]    { border-left-color: var(--na); }
+  .check[data-status=""]      { border-left-color: var(--line); }
+  .check legend { padding: 0; font-weight: 600; }
+  .check legend .n { color: var(--ink-2); font-weight: 400; margin-right: var(--u); }
+  .good { margin: var(--u) 0 0; }
+  .look { margin: var(--u) 0 0; font-size: .875rem; color: var(--ink-2); }
+  .look b { color: var(--ink); }
+
+  .choices { display: flex; flex-wrap: wrap; gap: var(--u); margin-top: calc(var(--u)*2); }
+  .choices button {
+    min-height: 44px; min-width: 88px; padding: 0 calc(var(--u)*2);
+    border: 1px solid var(--line); border-radius: var(--u); background: var(--card);
+    font: inherit; color: var(--ink); cursor: pointer;
+  }
+  .choices button:hover { background: var(--bg); }
+  .choices button[aria-pressed="true"] { color: #fff; font-weight: 600; border-color: transparent; }
+  .choices button[data-v="pass"][aria-pressed="true"]  { background: var(--pass); }
+  .choices button[data-v="issue"][aria-pressed="true"] { background: var(--issue); }
+  .choices button[data-v="na"][aria-pressed="true"]    { background: var(--na); }
+
+  .issue-panel { margin-top: calc(var(--u)*2); padding-top: calc(var(--u)*2); border-top: 1px solid var(--line); }
+  .issue-panel[hidden] { display: none; }
+  label.field { display: block; font-weight: 600; margin-bottom: var(--u); }
+  textarea {
+    display: block; width: 100%; min-height: calc(var(--u)*10); padding: var(--u) calc(var(--u)*1.5);
+    border: 1px solid #6b7686; border-radius: var(--u); font: inherit; color: var(--ink); resize: vertical;
+  }
+  .sev { border: 0; margin: calc(var(--u)*2) 0 0; padding: 0; }
+  .sev legend { font-weight: 600; padding: 0; margin-bottom: var(--u); }
+  .sev-help { margin: 0 0 var(--u); font-size: .875rem; color: var(--ink-2); }
+  .sev-opts { display: grid; gap: var(--u); }
+  .sev-opts label {
+    display: grid; grid-template-columns: auto 1fr; gap: var(--u) calc(var(--u)*1.5); align-items: start;
+    min-height: 44px; padding: var(--u) calc(var(--u)*1.5); border: 1px solid var(--line); border-radius: var(--u); cursor: pointer;
+  }
+  .sev-opts input { margin: 4px 0 0; width: 20px; height: 20px; accent-color: var(--brand); }
+  .sev-opts label:has(input:checked) { border-color: var(--brand); background: #eef3f9; }
+  .sev-opts b { display: block; }
+  .sev-opts span { color: var(--ink-2); font-size: .875rem; }
+  .missing { color: var(--issue); font-size: .875rem; margin: var(--u) 0 0; }
+
+  details.preview { margin-top: calc(var(--u)*4); }
+  details summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; }
+  pre#out {
+    margin: 0; padding: calc(var(--u)*2); background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--u); font: .8125rem/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  @media (max-width: 480px) {
+    .score { grid-template-columns: 1fr; }
+    .copy { width: 100%; }
+    .choices button { flex: 1 1 0; min-width: 0; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>UX Pass Checker</h1>
+  <p class="lede">Walk your app against the 13 acceptance checks before you ship. Mark each Pass, Issue, or N/A, then copy the summary into your sprint review or send it to the UX lead.</p>
+
+  <div class="score" role="region" aria-label="Score">
+    <div>
+      <div class="score-num"><span id="passed">0</span> <small>of</small> <span id="applicable">13</span> <small>passed</small></div>
+      <div class="score-meta" id="meta"></div>
+    </div>
+    <button class="copy" id="copy" type="button">Copy summary</button>
+    <div class="bar" role="progressbar" aria-label="Checks passed" aria-valuemin="0" aria-valuemax="13" aria-valuenow="0"><span id="fill"></span></div>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+  </div>
+
+  <div id="groups"></div>
+
+  <details class="preview">
+    <summary>Preview the report</summary>
+    <pre id="out"></pre>
+  </details>
+</main>
+
+<script>
+const GROUPS = [
+  { id: "A", title: "Task and flow", checks: [
+    { name: "Primary task completes unaided",
+      good: "The primary task completes end to end without coaching or explanation.",
+      look: "Hand the app to someone who has not seen it, give them the main task, and stay silent. Any question they ask, or any moment you want to step in, is a finding." },
+    { name: "One clear primary action per view",
+      good: "One primary action leads each view; the next step is obvious.",
+      look: "Open every view you have. Squint: one button should stand out. If you find two competing, or you hunt for what comes next, mark Issue." },
+    { name: "Users' own language",
+      good: "Language matches the user's vocabulary; no internal jargon or developer terms.",
+      look: "Read every label, button, heading, and message aloud. Flag IDs, enum values, table names, 'null', 'undefined', or terms your persona would not say." },
+    { name: "Feedback and visible status",
+      good: "Actions give visible feedback; status is visible whenever something is happening.",
+      look: "Click every button and submit every form. Within about a second something should change on screen. Throttle the network (browser dev tools) and check slow operations." }
+  ]},
+  { id: "B", title: "States and trust", checks: [
+    { name: "Required states exist",
+      good: "The states this flow needs exist: loading, empty, error, validation, success, permission.",
+      look: "For the main flow, force each state: slow network, no data, a failed request, bad input, a finished action, a user without access. Mark N/A only for states the flow truly cannot reach." },
+    { name: "Errors explain and recover",
+      good: "Error messages say what happened and how to recover.",
+      look: "Trigger real errors: bad input, offline, a rejected request. Each message should say what went wrong in plain words and offer a next step. 'Something went wrong' alone is an Issue." },
+    { name: "Consequential actions protected",
+      good: "Consequential actions are protected where warranted: confirmation, limits, undo, or recovery.",
+      look: "List every action that deletes, sends, charges, or overwrites. Each should have a confirmation, a limit, or an undo. Mark N/A if the app has no such action." },
+    { name: "Data is real and traceable",
+      good: "Every number, metric, and claim traces to real data; no placeholders or invented content.",
+      look: "Pick every number and claim on screen and name its source. Search the UI for 'lorem', 'TODO', 'N/A', '$0', round placeholder figures, and sample names." },
+    { name: "Search and filters are explainable",
+      good: "Search and filter results are explainable: active filters are visible, and a user can tell why a result matched.",
+      look: "Apply two filters and a search. Active filters should be visible and removable, and each result should show why it matched. Mark N/A if there is no search or filter." }
+  ]},
+  { id: "C", title: "Consistency and access", note: "A sampled manual baseline, not a full WCAG audit.", checks: [
+    { name: "Consistent naming and visual rhythm",
+      good: "One name per concept; the same component does the same job; type and spacing follow one rhythm.",
+      look: "Scan all views side by side. Does one thing always have one name? Do like buttons look and act alike? Do font sizes and spacing come from a small set of values?" },
+    { name: "Narrow and wide widths hold up",
+      good: "Inspected as actual pixels at narrow and wide widths: no horizontal scroll, nothing truncated without a way to see it.",
+      look: "Resize to about 375px and about 1440px (dev tools device mode is fine, but look at the pixels). Scroll sideways; check long names and numbers for cut-off text." },
+    { name: "Keyboard, labels, and alt text",
+      good: "The main task works by keyboard with visible focus that stays unobscured; inputs have labels; images have alt text.",
+      look: "Put the mouse away. Tab through the main task: focus must always be visible and never hidden behind a sticky header or modal. Check each input has a label and each image has alt text." },
+    { name: "Readable text and controls",
+      good: "Text and controls are readable: about 4.5:1 contrast for body text, about 3:1 for large text and control boundaries, and generous touch targets (WCAG 2.5.8 sets a 24px minimum, with spacing exceptions).",
+      look: "Sample body text, grey helper text, and button or input borders with a contrast checker. Measure small buttons and links; under 24px with no spacing around them fails." }
+  ]}
+];
+
+const SEVERITIES = [
+  { id: "S0", label: "S0 · Blocker", help: "Makes the task impossible, unsafe, or misleading. Fix before release." },
+  { id: "S1", label: "S1 · Major", help: "Major problem, but a workaround exists. Fix before release." },
+  { id: "S2", label: "S2 · Friction", help: "Meaningful friction. Can ship with a named owner and date." },
+  { id: "S3", label: "S3 · Cosmetic", help: "Cosmetic. Put it in the backlog deliberately." }
+];
+
+const state = [];          // flat, index = check number - 1: { status, note, sev }
+const els = [];            // per-check DOM refs
+let num = 0;
+
+const $ = (s) => document.querySelector(s);
+const h = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  kids.flat().forEach(k => e.append(k));
+  return e;
+};
+
+function build() {
+  const root = $("#groups");
+  GROUPS.forEach(g => {
+    const sec = h("section", { class: "group", "aria-labelledby": "g" + g.id },
+      h("h2", { id: "g" + g.id }, g.id + ". ", g.title));
+    if (g.note) sec.append(h("p", { class: "group-note", text: g.note }));
+    g.checks.forEach(c => {
+      const i = num++;
+      c.n = i + 1;
+      state[i] = { status: "", note: "", sev: "" };
+      const noteId = "note" + i;
+
+      const buttons = [["pass", "Pass"], ["issue", "Issue"], ["na", "N/A"]].map(([v, t]) =>
+        h("button", { type: "button", "data-v": v, "aria-pressed": "false", text: t, onclick: () => setStatus(i, v) }));
+
+      const sevName = "sev" + i;
+      const sevOpts = SEVERITIES.map(s => {
+        const input = h("input", { type: "radio", name: sevName, value: s.id });
+        input.addEventListener("change", () => { state[i].sev = s.id; update(); });
+        return h("label", {}, input, h("div", {}, h("b", { text: s.label }), h("span", { text: s.help })));
+      });
+
+      const note = h("textarea", { id: noteId, rows: "3", placeholder: "What is wrong, and where?" });
+      note.addEventListener("input", () => { state[i].note = note.value; update(); });
+      const missing = h("p", { class: "missing", text: "Pick a severity so the report can place this issue." });
+
+      const panel = h("div", { class: "issue-panel", hidden: "" },
+        h("label", { class: "field", for: noteId, text: "What is wrong?" }), note,
+        h("fieldset", { class: "sev" },
+          h("legend", { text: "Severity" }),
+          h("p", { class: "sev-help", text: "Judge it by how often it happens, how hard it is to overcome, and whether it keeps recurring. Any check can land at any severity." }),
+          h("div", { class: "sev-opts" }, sevOpts)),
+        missing);
+
+      const box = h("fieldset", { class: "check", "data-status": "" },
+        h("legend", {}, h("span", { class: "n", text: c.n + "." }), c.name),
+        h("p", { class: "good", text: c.good }),
+        h("p", { class: "look" }, h("b", { text: "Where to look: " }), c.look),
+        h("div", { class: "choices" }, buttons),
+        panel);
+      els[i] = { box, buttons, panel, missing };
+      sec.append(box);
+    });
+    root.append(sec);
+  });
+}
+
+function setStatus(i, v) {
+  state[i].status = state[i].status === v ? "" : v;   // click again to clear
+  update();
+  if (state[i].status === "issue") els[i].panel.querySelector("textarea").focus();
+}
+
+function counts() {
+  const t = num;
+  const pass = state.filter(s => s.status === "pass").length;
+  const issue = state.filter(s => s.status === "issue").length;
+  const na = state.filter(s => s.status === "na").length;
+  return { t, pass, issue, na, open: t - pass - issue - na, applicable: t - na };
+}
+
+function update() {
+  state.forEach((s, i) => {
+    const e = els[i];
+    e.box.dataset.status = s.status;
+    e.buttons.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === s.status)));
+    e.panel.hidden = s.status !== "issue";
+    e.missing.hidden = !(s.status === "issue" && !s.sev);
+  });
+  const c = counts();
+  $("#passed").textContent = c.pass;
+  $("#applicable").textContent = c.applicable;
+  const bar = $(".bar");
+  bar.setAttribute("aria-valuemax", c.applicable);
+  bar.setAttribute("aria-valuenow", c.pass);
+  $("#fill").style.width = (c.applicable ? c.pass / c.applicable * 100 : 0) + "%";
+  const bits = [`${c.issue} issue${c.issue === 1 ? "" : "s"}`, `${c.na} N/A`, `${c.open} not yet checked`];
+  $("#meta").textContent = bits.join(" · ");
+  $("#out").textContent = report();
+}
+
+function allChecks() { return GROUPS.flatMap(g => g.checks.map(c => ({ ...c, g: g.id }))); }
+
+function quote(note) {
+  return note.trim().split("\n").map(l => "  > " + l).join("\n");
+}
+
+function report() {
+  const c = counts();
+  const d = new Date();
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const all = allChecks();
+  const line = (ch, extra = "") => `- **${ch.n}. ${ch.name}**${extra}`;
+  const out = [`# UX pass report`, ``, `**Date:** ${date}`,
+    `**Score:** ${c.pass} of ${c.applicable} applicable checks passed (${c.na} N/A${c.open ? `, ${c.open} not yet checked` : ""})`, ``];
+
+  out.push(`## Issues by severity`, ``);
+  const issues = all.filter(ch => state[ch.n - 1].status === "issue");
+  if (!issues.length) out.push(`None marked.`, ``);
+  [...SEVERITIES.map(s => s.id), ""].forEach(sid => {
+    const list = issues.filter(ch => state[ch.n - 1].sev === sid);
+    if (!list.length) return;
+    const s = SEVERITIES.find(x => x.id === sid);
+    out.push(`### ${s ? s.label + " — " + s.help : "Severity not set"}`, ``);
+    list.forEach(ch => {
+      const n = state[ch.n - 1].note;
+      out.push(line(ch, ` (${ch.g})`) + (n.trim() ? "\n" + quote(n) : "\n  > (no note)"));
+    });
+    out.push(``);
+  });
+
+  const section = (title, st) => {
+    const list = all.filter(ch => (state[ch.n - 1].status) === st);
+    if (!list.length) return;
+    out.push(`## ${title}`, ``);
+    list.forEach(ch => out.push(line(ch)));
+    out.push(``);
+  };
+  section("Passed", "pass");
+  section("N/A", "na");
+  section("Not yet checked", "");
+  return out.join("\n").trimEnd() + "\n";
+}
+
+async function copy() {
+  const text = report();
+  const status = $("#status");
+  try {
+    await navigator.clipboard.writeText(text);
+    status.textContent = "Summary copied to the clipboard.";
+  } catch {
+    const ta = h("textarea", { "aria-hidden": "true", style: "position:fixed;opacity:0" });
+    ta.value = text; document.body.append(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch {}
+    ta.remove();
+    status.textContent = ok ? "Summary copied to the clipboard."
+      : "Copy was blocked. Open “Preview the report” below and copy it by hand.";
+    if (!ok) document.querySelector("details.preview").open = true;
+  }
+}
+
+build();
+$("#copy").addEventListener("click", copy);
+update();
+</script>
+</body>
+</html>
